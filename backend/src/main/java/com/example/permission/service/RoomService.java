@@ -59,7 +59,23 @@ public class RoomService {
 
     public PageResult<Room> pageList(Integer pageNum, Integer pageSize, String roomNumber,
                                       Long buildingId, Long floorId, Long roomTypeId,
-                                      List<Integer> status, String orientation, String viewType) {
+                                      List<Integer> status, List<String> orientations,
+                                      List<String> viewTypes, List<String> specialTags) {
+        QueryWrapper query = buildQueryWrapper(roomNumber, buildingId, floorId, roomTypeId,
+                status, orientations, viewTypes, specialTags);
+        query.orderBy(ROOM.ROOM_NUMBER.asc());
+        Page<Room> page = roomMapper.paginate(Page.of(pageNum, pageSize), query);
+        for (Room room : page.getRecords()) {
+            fillRoomAssociations(room);
+        }
+        return new PageResult<>(page.getTotalRow(), page.getRecords(),
+                (long) page.getPageNumber(), (long) page.getPageSize());
+    }
+
+    private QueryWrapper buildQueryWrapper(String roomNumber, Long buildingId, Long floorId,
+                                           Long roomTypeId, List<Integer> status,
+                                           List<String> orientations, List<String> viewTypes,
+                                           List<String> specialTags) {
         QueryWrapper query = QueryWrapper.create()
                 .from(Room.class)
                 .where(ROOM.DELETED.eq(0));
@@ -78,19 +94,22 @@ public class RoomService {
         if (status != null && !status.isEmpty()) {
             query.and(ROOM.STATUS.in(status));
         }
-        if (StringUtils.hasText(orientation)) {
-            query.and(ROOM.ORIENTATION.eq(orientation));
+        if (orientations != null && !orientations.isEmpty()) {
+            query.and(ROOM.ORIENTATION.in(orientations));
         }
-        if (StringUtils.hasText(viewType)) {
-            query.and(ROOM.VIEW_TYPE.eq(viewType));
+        if (viewTypes != null && !viewTypes.isEmpty()) {
+            query.and(ROOM.VIEW_TYPE.in(viewTypes));
         }
-        query.orderBy(ROOM.ROOM_NUMBER.asc());
-        Page<Room> page = roomMapper.paginate(Page.of(pageNum, pageSize), query);
-        for (Room room : page.getRecords()) {
-            fillRoomAssociations(room);
+        if (specialTags != null && !specialTags.isEmpty()) {
+            for (int i = 0; i < specialTags.size(); i++) {
+                if (i == 0) {
+                    query.and(ROOM.SPECIAL_TAGS.like(specialTags.get(i)));
+                } else {
+                    query.or(ROOM.SPECIAL_TAGS.like(specialTags.get(i)));
+                }
+            }
         }
-        return new PageResult<>(page.getTotalRow(), page.getRecords(),
-                (long) page.getPageNumber(), (long) page.getPageSize());
+        return query;
     }
 
     public Room getById(Long id) {
@@ -225,6 +244,118 @@ public class RoomService {
         log.setRemark(remark);
         log.setCreateTime(LocalDateTime.now());
         roomStatusLogMapper.insert(log);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Room copyRoom(Long sourceRoomId, Room newRoom) {
+        Room source = roomMapper.selectOneById(sourceRoomId);
+        if (source == null) {
+            throw new BusinessException("源房间不存在");
+        }
+        QueryWrapper checkQuery = QueryWrapper.create()
+                .from(Room.class)
+                .where(ROOM.ROOM_NUMBER.eq(newRoom.getRoomNumber()))
+                .and(ROOM.DELETED.eq(0));
+        long count = roomMapper.selectCountByQuery(checkQuery);
+        if (count > 0) {
+            throw new BusinessException("房间号已存在");
+        }
+        if (newRoom.getFloorId() != null) {
+            Floor floor = floorMapper.selectOneById(newRoom.getFloorId());
+            if (floor == null || !floor.getBuildingId().equals(newRoom.getBuildingId() != null ? newRoom.getBuildingId() : source.getBuildingId())) {
+                throw new BusinessException("楼层不属于该楼栋");
+            }
+        }
+        Room copied = new Room();
+        copied.setRoomNumber(newRoom.getRoomNumber());
+        copied.setBuildingId(newRoom.getBuildingId() != null ? newRoom.getBuildingId() : source.getBuildingId());
+        copied.setFloorId(newRoom.getFloorId() != null ? newRoom.getFloorId() : source.getFloorId());
+        copied.setRoomTypeId(newRoom.getRoomTypeId() != null ? newRoom.getRoomTypeId() : source.getRoomTypeId());
+        copied.setOrientation(newRoom.getOrientation() != null ? newRoom.getOrientation() : source.getOrientation());
+        copied.setViewType(newRoom.getViewType() != null ? newRoom.getViewType() : source.getViewType());
+        copied.setLocationFeatures(newRoom.getLocationFeatures() != null ? newRoom.getLocationFeatures() : source.getLocationFeatures());
+        copied.setSpecialTags(newRoom.getSpecialTags() != null ? newRoom.getSpecialTags() : source.getSpecialTags());
+        copied.setRemark(newRoom.getRemark() != null ? newRoom.getRemark() : source.getRemark());
+        copied.setStatus(1);
+        copied.setDeleted(0);
+        copied.setCreateTime(LocalDateTime.now());
+        copied.setUpdateTime(LocalDateTime.now());
+        roomMapper.insert(copied);
+        floorService.updateRoomCount(copied.getFloorId());
+        roomTypeService.updateRoomCount(copied.getRoomTypeId());
+        return copied;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> applyTemplate(Long templateRoomId, List<Long> targetRoomIds,
+                                              boolean applyOrientation, boolean applyViewType,
+                                              boolean applyLocationFeatures, boolean applySpecialTags,
+                                              Long operatorId, String operatorName, String reason) {
+        Room template = roomMapper.selectOneById(templateRoomId);
+        if (template == null) {
+            throw new BusinessException("模板房间不存在");
+        }
+        int success = 0;
+        List<Map<String, String>> failures = new ArrayList<>();
+        for (Long targetId : targetRoomIds) {
+            if (targetId.equals(templateRoomId)) continue;
+            Room target = roomMapper.selectOneById(targetId);
+            if (target == null) {
+                Map<String, String> fail = new HashMap<>();
+                fail.put("roomNumber", String.valueOf(targetId));
+                fail.put("reason", "房间不存在");
+                failures.add(fail);
+                continue;
+            }
+            if (applyOrientation) target.setOrientation(template.getOrientation());
+            if (applyViewType) target.setViewType(template.getViewType());
+            if (applyLocationFeatures) target.setLocationFeatures(template.getLocationFeatures());
+            if (applySpecialTags) target.setSpecialTags(template.getSpecialTags());
+            target.setUpdateTime(LocalDateTime.now());
+            roomMapper.update(target);
+            RoomStatusLog log = new RoomStatusLog();
+            log.setRoomId(targetId);
+            log.setRoomNumber(target.getRoomNumber());
+            log.setOldStatus(target.getStatus());
+            log.setNewStatus(target.getStatus());
+            log.setOperatorId(operatorId);
+            log.setOperator(operatorName);
+            log.setRemark("模板应用（来源：" + template.getRoomNumber() + "）" + (reason != null ? " - " + reason : ""));
+            log.setCreateTime(LocalDateTime.now());
+            roomStatusLogMapper.insert(log);
+            success++;
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", success);
+        result.put("failures", failures);
+        return result;
+    }
+
+    public List<Room> listByFloorId(Long floorId) {
+        QueryWrapper query = QueryWrapper.create()
+                .from(Room.class)
+                .where(ROOM.FLOOR_ID.eq(floorId))
+                .and(ROOM.DELETED.eq(0))
+                .orderBy(ROOM.ROOM_NUMBER.asc());
+        List<Room> rooms = roomMapper.selectListByQuery(query);
+        for (Room room : rooms) {
+            fillRoomAssociations(room);
+        }
+        return rooms;
+    }
+
+    public List<Room> listAllForExport(String roomNumber, Long buildingId, Long floorId,
+                                        Long roomTypeId, List<Integer> status,
+                                        List<String> orientations, List<String> viewTypes,
+                                        List<String> specialTags) {
+        QueryWrapper query = buildQueryWrapper(roomNumber, buildingId, floorId, roomTypeId,
+                status, orientations, viewTypes, specialTags);
+        query.orderBy(ROOM.ROOM_NUMBER.asc());
+        List<Room> rooms = roomMapper.selectListByQuery(query);
+        for (Room room : rooms) {
+            fillRoomAssociations(room);
+        }
+        return rooms;
     }
 
     private void fillRoomAssociations(Room room) {

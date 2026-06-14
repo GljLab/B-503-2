@@ -430,3 +430,60 @@ INSERT INTO sys_data_permission (role_id, scope_type, custom_dept_ids) VALUES
 (5, 1, NULL),
 (6, 1, NULL),
 (7, 1, NULL);
+
+-- =============================================
+-- 保存的筛选方案表
+-- =============================================
+CREATE TABLE IF NOT EXISTS saved_filter (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT 'ID',
+    user_id BIGINT NOT NULL COMMENT '用户ID',
+    filter_name VARCHAR(100) NOT NULL COMMENT '方案名称',
+    filter_config TEXT NOT NULL COMMENT '筛选条件JSON',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='保存的筛选方案表';
+
+-- 新增房间管理按钮权限
+INSERT INTO sys_menu (id, menu_name, parent_id, order_num, path, component, perms, menu_type, visible, status, icon) VALUES
+(149, '房间复制', 104, 9, '', NULL, 'hotel:room:copy', 2, 1, 1, NULL),
+(150, '模板应用', 104, 10, '', NULL, 'hotel:room:template', 2, 1, 1, NULL),
+(153, '房间数据导出', 104, 11, '', NULL, 'hotel:room:export', 2, 1, 1, NULL);
+
+-- 酒店管理员：新增权限
+INSERT INTO sys_role_menu (role_id, menu_id) VALUES
+(3, 149), (3, 150), (3, 153);
+
+-- 前厅部经理：复制和模板权限
+INSERT INTO sys_role_menu (role_id, menu_id) VALUES
+(4, 149), (4, 150);
+
+-- 客房部经理：复制权限，导出基础数据权限
+INSERT INTO sys_role_menu (role_id, menu_id) VALUES
+(5, 149), (5, 153);
+
+-- =============================================
+-- 客房服务员角色 (housekeeper)
+-- =============================================
+INSERT INTO sys_role (id, role_name, role_key, order_num, status, remark) VALUES
+(8, '客房服务员', 'housekeeper', 8, 1, '客房服务员，只能看待清洁和清洁中的房间');
+
+INSERT INTO sys_user (id, username, password, nickname, email, phone, status) VALUES
+(8, 'housekeeper', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iKtE/ETXmB5nNiHxqHnHfgVd5GK6', '客房服务员', 'housekeeper@example.com', '13800138007', 1);
+
+INSERT INTO sys_user_role (user_id, role_id) VALUES
+(8, 8);
+
+-- 客房服务员：只看房间列表和查询（待清洁和清洁中由前端限制）
+INSERT INTO sys_role_menu (role_id, menu_id) VALUES
+(8, 100), (8, 104),
+(8, 141);
+
+INSERT INTO sys_data_permission (role_id, scope_type, custom_dept_ids) VALUES
+(8, 1, NULL);
+
+-- =============================================
+-- 补充：前厅部经理增加房间数据导出权限（不含成本价）
+-- =============================================
+INSERT INTO sys_role_menu (role_id, menu_id) VALUES
+(4, 153);
