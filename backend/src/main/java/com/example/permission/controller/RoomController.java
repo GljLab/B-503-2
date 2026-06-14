@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -146,7 +147,13 @@ public class RoomController {
         String username = sysUserService.getUserDetail(userId).getUsername();
 
         Long templateRoomId = Long.valueOf(params.get("templateRoomId").toString());
-        List<Long> targetRoomIds = (List<Long>) params.get("targetRoomIds");
+        List<?> rawIds = (List<?>) params.get("targetRoomIds");
+        List<Long> targetRoomIds = new ArrayList<>();
+        if (rawIds != null) {
+            for (Object id : rawIds) {
+                targetRoomIds.add(Long.valueOf(id.toString()));
+            }
+        }
         Boolean applyOrientation = params.get("applyOrientation") != null ? (Boolean) params.get("applyOrientation") : false;
         Boolean applyViewType = params.get("applyViewType") != null ? (Boolean) params.get("applyViewType") : false;
         Boolean applyLocationFeatures = params.get("applyLocationFeatures") != null ? (Boolean) params.get("applyLocationFeatures") : false;

@@ -1025,7 +1025,7 @@ const tooltipY = ref(0)
 const tooltipRoom = ref({})
 
 const handleFloorplanBuildingChange = async () => {
-  floorplanFloorId = null; floorplanRooms.value = []
+  floorplanFloorId.value = null; floorplanRooms.value = []
   if (!floorplanBuildingId.value) { floorplanFloors.value = []; return }
   try {
     const res = await api.hotel.getFloors(floorplanBuildingId.value)
@@ -1268,7 +1268,7 @@ const handleSaveScheme = async () => {
       viewTypes: queryParams.viewTypes,
       specialTags: queryParams.specialTags
     }
-    const res = await api.hotel.addSavedFilter({ name: saveSchemeName.value, params: JSON.stringify(params) })
+    const res = await api.hotel.addSavedFilter({ filterName: saveSchemeName.value, filterConfig: JSON.stringify(params) })
     if (res.code === 200) {
       ElMessage.success('方案保存成功'); saveSchemeDialogVisible.value = false
       await loadSavedSchemes()
