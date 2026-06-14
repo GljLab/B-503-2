@@ -160,13 +160,28 @@ const api = {
     updateRoom: (data) => request.put('/hotel/room', data),
     deleteRoom: (id) => request.delete(`/hotel/room/${id}`),
     batchCreateRooms: (data) => request.post('/hotel/room/batch', data),
+    copyRoom: (sourceRoomId, data) => request.post(`/hotel/room/copy/${sourceRoomId}`, data),
+    applyTemplate: (data) => request.post('/hotel/room/applyTemplate', data),
     updateRoomStatus: (id, data) => request.put(`/hotel/room/${id}/status`, data),
     getRoomStatusLogs: (roomId) => request.get(`/hotel/room/${roomId}/logs`),
+    getRoomList: (params) => request.get('/hotel/room/list', { params }),
+    getRoomsByFloor: (floorId) => request.get(`/hotel/room/floor/${floorId}`),
+    exportRooms: (data) => request.post('/hotel/room/export', data, { responseType: 'blob' }),
+
+    getSavedFilters: () => request.get('/hotel/filter/list'),
+    getSavedFilter: (id) => request.get(`/hotel/filter/${id}`),
+    addSavedFilter: (data) => request.post('/hotel/filter', data),
+    updateSavedFilter: (data) => request.put('/hotel/filter', data),
+    deleteSavedFilter: (id) => request.delete(`/hotel/filter/${id}`),
 
     getDashboardOverview: () => request.get('/hotel/dashboard/overview'),
     getRoomStatusStats: () => request.get('/hotel/dashboard/roomStatus'),
     getRoomTypeStats: () => request.get('/hotel/dashboard/roomType'),
     getFloorStats: () => request.get('/hotel/dashboard/floor'),
+    getDetailedRoomTypeStats: () => request.get('/hotel/dashboard/roomType/detail'),
+    getDetailedFloorStats: () => request.get('/hotel/dashboard/floor/detail'),
+    getAttributeDistribution: () => request.get('/hotel/dashboard/attributeDist'),
+    getStatusDurationStats: () => request.get('/hotel/dashboard/statusDuration'),
 
     uploadFile: (formData) => request.post('/file/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
   }

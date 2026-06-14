@@ -20,6 +20,9 @@
         <el-button v-if="hasPermission('hotel:room:delete')" type="danger" @click="handleDelete">
           <el-icon><Delete /></el-icon>删除房间
         </el-button>
+        <el-button v-if="hasPermission('hotel:room:copy')" type="success" @click="openCopyDialog">
+          <el-icon><CopyDocument /></el-icon>复制房间
+        </el-button>
       </div>
     </div>
 
@@ -208,6 +211,75 @@
         <el-button type="primary" :loading="remarkSaving" @click="handleSaveRemark">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="copyDialogVisible"
+      title="复制房间"
+      width="800px"
+      destroy-on-close
+    >
+      <el-row :gutter="20">
+        <el-col :span="12">
+          <el-card shadow="never" class="copy-source-card">
+            <template #header><span class="card-title">源房间信息</span></template>
+            <el-descriptions :column="1" border size="small" v-if="roomData">
+              <el-descriptions-item label="房间号">{{ roomData.roomNumber }}</el-descriptions-item>
+              <el-descriptions-item label="楼栋">{{ roomData.buildingName || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="楼层">{{ roomData.floorName || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="房型">{{ roomData.roomTypeName || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="朝向">{{ roomData.orientation || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="景观">{{ roomData.viewType || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="位置特征">{{ parsedLocationFeatures.join('、') || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="特殊标签">{{ parsedSpecialTags.join('、') || '-' }}</el-descriptions-item>
+            </el-descriptions>
+          </el-card>
+        </el-col>
+        <el-col :span="12">
+          <el-card shadow="never">
+            <template #header><span class="card-title">新房间信息</span></template>
+            <el-form ref="copyFormRef" :model="copyForm" :rules="copyRules" label-width="90px">
+              <el-form-item label="新房号" prop="roomNumber">
+                <el-input v-model="copyForm.roomNumber" placeholder="请输入新房号" />
+              </el-form-item>
+              <el-form-item label="楼栋" prop="buildingId">
+                <el-select v-model="copyForm.buildingId" placeholder="请选择楼栋" style="width: 100%" @change="handleCopyBuildingChange">
+                  <el-option v-for="b in copyBuildings" :key="b.id" :label="b.buildingName" :value="b.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="楼层" prop="floorId">
+                <el-select v-model="copyForm.floorId" placeholder="请选择楼层" style="width: 100%">
+                  <el-option v-for="f in copyFloors" :key="f.id" :label="f.floorName" :value="f.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="朝向">
+                <el-select v-model="copyForm.orientation" placeholder="请选择朝向" clearable style="width: 100%">
+                  <el-option v-for="o in orientationOptions" :key="o" :label="o" :value="o" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="景观">
+                <el-select v-model="copyForm.viewType" placeholder="请选择景观" clearable style="width: 100%">
+                  <el-option v-for="v in viewTypeOptions" :key="v" :label="v" :value="v" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="位置特征">
+                <el-select v-model="copyForm.locationFeatures" multiple placeholder="请选择位置特征" style="width: 100%">
+                  <el-option v-for="f in locationFeatureOptions" :key="f" :label="f" :value="f" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="特殊标签">
+                <el-select v-model="copyForm.specialTags" multiple placeholder="请选择特殊标签" style="width: 100%">
+                  <el-option v-for="t in specialTagOptions" :key="t" :label="t" :value="t" />
+                </el-select>
+              </el-form-item>
+            </el-form>
+          </el-card>
+        </el-col>
+      </el-row>
+      <template #footer>
+        <el-button @click="copyDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="copySaving" @click="handleCopyRoom">确认复制</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -215,7 +287,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Edit, Delete, Switch } from '@element-plus/icons-vue'
+import { ArrowLeft, Edit, Delete, Switch, CopyDocument } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import api from '@/api'
 
@@ -441,6 +513,105 @@ const handleSaveRemark = async () => {
   }
 }
 
+const copyDialogVisible = ref(false)
+const copySaving = ref(false)
+const copyFormRef = ref(null)
+const copyBuildings = ref([])
+const copyFloors = ref([])
+
+const copyForm = reactive({
+  roomNumber: '',
+  buildingId: null,
+  floorId: null,
+  orientation: '',
+  viewType: '',
+  locationFeatures: [],
+  specialTags: []
+})
+
+const copyRules = {
+  roomNumber: [{ required: true, message: '请输入新房号', trigger: 'blur' }],
+  buildingId: [{ required: true, message: '请选择楼栋', trigger: 'change' }],
+  floorId: [{ required: true, message: '请选择楼层', trigger: 'change' }]
+}
+
+const openCopyDialog = async () => {
+  copyForm.roomNumber = ''
+  copyForm.buildingId = roomData.value?.buildingId || null
+  copyForm.floorId = roomData.value?.floorId || null
+  copyForm.orientation = roomData.value?.orientation || ''
+  copyForm.viewType = roomData.value?.viewType || ''
+  copyForm.locationFeatures = parseJsonArray(roomData.value?.locationFeatures)
+  copyForm.specialTags = parseJsonArray(roomData.value?.specialTags)
+  try {
+    const res = await api.hotel.getBuildings()
+    if (res.code === 200) {
+      copyBuildings.value = res.data || []
+    }
+  } catch {
+    copyBuildings.value = []
+  }
+  if (copyForm.buildingId) {
+    try {
+      const res = await api.hotel.getFloors(copyForm.buildingId)
+      if (res.code === 200) {
+        copyFloors.value = res.data || []
+      }
+    } catch {
+      copyFloors.value = []
+    }
+  } else {
+    copyFloors.value = []
+  }
+  copyDialogVisible.value = true
+}
+
+const handleCopyBuildingChange = async () => {
+  copyForm.floorId = null
+  if (!copyForm.buildingId) {
+    copyFloors.value = []
+    return
+  }
+  try {
+    const res = await api.hotel.getFloors(copyForm.buildingId)
+    if (res.code === 200) {
+      copyFloors.value = res.data || []
+    }
+  } catch {
+    copyFloors.value = []
+  }
+}
+
+const handleCopyRoom = async () => {
+  const valid = await copyFormRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  copySaving.value = true
+  try {
+    const payload = {
+      roomNumber: copyForm.roomNumber,
+      buildingId: copyForm.buildingId,
+      floorId: copyForm.floorId,
+      orientation: copyForm.orientation || undefined,
+      viewType: copyForm.viewType || undefined,
+      locationFeatures: copyForm.locationFeatures.length ? JSON.stringify(copyForm.locationFeatures) : undefined,
+      specialTags: copyForm.specialTags.length ? JSON.stringify(copyForm.specialTags) : undefined
+    }
+    const res = await api.hotel.copyRoom(roomData.value.id, payload)
+    if (res.code === 200) {
+      ElMessage.success('复制成功')
+      copyDialogVisible.value = false
+      router.push(`/hotel/room/${res.data.id}`)
+    } else {
+      ElMessage.error(res.message || '复制失败')
+    }
+  } catch {
+    ElMessage.error('复制失败')
+  } finally {
+    copySaving.value = false
+  }
+}
+
 onMounted(() => {
   loadRoom()
   loadStatusLogs()
@@ -594,5 +765,10 @@ onMounted(() => {
 .log-remark {
   color: #718096;
   font-size: 13px;
+}
+
+.copy-source-card {
+  border-radius: 12px;
+  border: none;
 }
 </style>
